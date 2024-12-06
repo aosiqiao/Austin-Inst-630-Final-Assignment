@@ -1,0 +1,58 @@
+import numpy as np
+import json
+from sentence_transformers import SentenceTransformer
+import faiss
+import os
+import openai
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Fetch OpenAI API key
+openai.api_key = os.getenv('OPENAI_API_KEY')
+
+# Load embeddings
+embeddings = np.load('/Users/aosiqiao/Desktop/Coding/embeddings.npy')
+with open('/Users/aosiqiao/Desktop/Coding/texts.json', 'r') as f:
+    texts = json.load(f)
+
+# Initialize FAISS
+dimension = embeddings.shape[1]
+index = faiss.IndexFlatL2(dimension)
+index.add(embeddings)
+
+# Search for the most relevant text
+def search(query, top_k=1):
+    # Load embedding model for query
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    query_embedding = model.encode([query])
+    distances, indices = index.search(query_embedding, top_k)
+    results = [texts[i] for i in indices[0]]
+    return results
+
+# Generate a response from GPT
+def generate_response(context, user_query):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Use the cheaper model
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": f"Context: {context}\n\nQuestion: {user_query}"}
+            ]
+        )
+        return response['choices'][0]['message']['content']
+    except Exception as e:
+        return f"Error generating response: {e}"
+
+if __name__ == "__main__":
+    user_query = input("Enter your query: ")
+    results = search(user_query, top_k=1)
+    
+    if results:
+        context = results[0] 
+        print(f"Most relevant result:\n{context}\n")
+        
+        # Generate a conversational response
+        reply = generate_response(context, user_query)
+        print(f"Response from GPT:\n{reply}")
+    else:
+        print("No relevant context found!")
